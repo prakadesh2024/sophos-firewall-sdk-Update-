@@ -650,6 +650,7 @@ class SophosFirewall:
         end_ip: str = None,
         host_type: str = "IP",
         debug: bool = False,
+        ip_list: list = None
     ):
         """Create IP Host.
 
@@ -659,14 +660,35 @@ class SophosFirewall:
             mask (str): Subnet mask in dotted decimal format (ex. 255.255.255.0). Only used with type: Network.
             start_ip (str): Starting IP address in case of host_type=IPRange.
             end_ip (str): Ending IP address in case of host_type=IPRange.
-            host_type (str, optional): Type of Host. Valid options: IP, Network, IPRange.
+            host_type (str, optional): Type of Host. Valid options: IP, Network, IPRange, IPList.
             debug (bool, optional): Turn on debugging. Defaults to False.
+            ip_list (list, optional): List of IP addresses for the host.
         Returns:
             dict: XML response converted to Python dictionary
         """
         return IPHost(self.client).create(
-            name, ip_address, mask, start_ip, end_ip, host_type, debug
+            name, ip_address, mask, start_ip, end_ip, host_type, debug, ip_list
         )
+        
+    def update_iplist(
+        self,
+        name: str,
+        ip_list: list,
+        action: str,
+        debug: bool = False
+    ):
+        """Update IP list for an existing IPHost.
+
+        Args:
+            name (str): Name of the IPHost object.
+            ip_list (list): List of IP addresses to add or remove.
+            action (str): Action to perform. Valid values are "add" or "remove".
+            debug (bool, optional): Turn on debugging. Defaults to False.
+
+        Returns:
+            dict: XML response converted to Python dictionary.
+        """
+        return IPHost(self.client).update_iplist(name, ip_list, action, debug)
 
     def create_ip_network(
         self,

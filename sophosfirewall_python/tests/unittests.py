@@ -18,6 +18,9 @@ from sophosfirewall_python.api_client import (
 )
 from sophosfirewall_python.backup import Backup
 from sophosfirewall_python.admin import AclRule
+from sophosfirewall_python.host import IPHost
+from sophosfirewall_python.api_client import SophosFirewallInvalidArgument
+
 
 
 class TestAPIClient(unittest.TestCase):
@@ -453,7 +456,7 @@ class TestSophosFirewall(unittest.TestCase):
         )
 
         self.assertRaises(
-            SophosFirewallAPIError, self.fw.create_rule, {"rule_params": rule_params}
+            SophosFirewallAPIError, self.fw.create_rule, rule_params=rule_params
         )
 
     @patch.object(APIClient, "_post")
@@ -594,7 +597,113 @@ class TestSophosFirewall(unittest.TestCase):
         }
 
         assert self.fw.update_backup(backup_params=backup_params) == expected_result
+        
+    @patch.object(APIClient, "_post")
+    def test_create_iphost_iplist(self, mocked_post):
+        """Test creating an IPHost of type IPList"""
+        mock_response = Mock()
+        mock_response.content = (
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Response APIVersion="1905.1" IPS_CAT_VER="1">
+            <Login>
+              <status>Authentication Successful</status>
+            </Login><IPHost transactionid="">
+              <Status code="200">Configuration applied successfully.</Status>
+            </IPHost>
+            </Response>""".replace(
+                "\n", ""
+            )
+            .strip()
+            .encode()
+        )
 
+        mocked_post.return_value = mock_response
+
+        expected_result = {
+            "Response": {
+                "@APIVersion": "1905.1",
+                "@IPS_CAT_VER": "1",
+                "Login": {"status": "Authentication Successful"},
+                "IPHost": {
+                    "@transactionid": "",
+                    "Status": {
+                        "@code": "200",
+                        "#text": "Configuration applied successfully.",
+                    },
+                },
+            }
+        }
+
+        assert self.fw.create_ip_host(
+            name="Test IPList", 
+            host_type="IPList",
+            ip_list=["192.168.1.1", "192.168.1.2"]
+        ) == expected_result
+        
+    @patch.object(APIClient, "_post")
+    def test_update_iphost_iplist_add(self, mocked_post):
+        """Test updating an IPHost of type IPList"""
+        # Mock get response
+        get_response = Mock()
+        get_response.content = (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Response APIVersion="1905.1" IPS_CAT_VER="1">
+            <Login>
+                <status>Authentication Successful</status>
+            </Login>
+            <IPHost transactionid="">
+                <Name>TestIPList</Name>
+                <IPFamily>IPv4</IPFamily>
+                <HostType>IPList</HostType>
+                <ListOfIPAddresses>192.168.1.10,192.168.1.11</ListOfIPAddresses>
+            </IPHost>
+            </Response>
+            """.replace("\n", "").strip().encode()
+        )
+
+        # Mock update response
+        update_response = Mock()
+        update_response.content = (
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <Response APIVersion="1905.1" IPS_CAT_VER="1">
+            <Login>
+                <status>Authentication Successful</status>
+            </Login>
+            <IPHost transactionid="">
+                <Status code="200">Configuration applied successfully.</Status>
+            </IPHost>
+            </Response>
+            """.replace("\n", "").strip().encode()
+        )
+
+        mocked_post.side_effect = [get_response, update_response]
+
+        expected_result = {
+            "Response": {
+                "@APIVersion": "1905.1", 
+                "@IPS_CAT_VER": "1",
+                "Login": {"status": "Authentication Successful"},
+                "IPHost": {
+                    "@transactionid": "",
+                    "Status": {
+                        "@code": "200",
+                        "#text": "Configuration applied successfully."
+                    }
+                }
+            }
+        }
+
+        resp = self.fw.update_iplist(
+            name="TestIPList",
+            ip_list=["192.168.1.12"],
+            action="add"
+        )
+        assert resp == expected_result
+        
+    
     @patch.object(APIClient, "_post")
     def test_create_acl_rule(self, mocked_post):
         """Test create_acl_rule() method"""
@@ -879,7 +988,6 @@ class TestSophosFirewall(unittest.TestCase):
             }
         }
         assert self.fw.get_ip_host(name="TEST1") == expected_result
-
     @patch.object(APIClient, "_post")
     def test_remove(self, mocked_post):
         """Test remove() method"""

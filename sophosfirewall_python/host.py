@@ -6,9 +6,11 @@ Unless required by applicable law or agreed to in writing, software distributed 
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing
 permissions and limitations under the License.
 """
+from elasticsearch import logger
 from sophosfirewall_python.utils import Utils
 from sophosfirewall_python.api_client import SophosFirewallInvalidArgument
 
+MAX_IPLIST_ADDRESSES = 1000
 
 class IPHost:
     """Class for working with IP Host(s)."""
@@ -29,15 +31,30 @@ class IPHost:
                 xml_tag="IPHost", key="Name", value=name, operator=operator
             )
         if ip_address:
-            return self.client.get_tag_with_filter(
+            ip_resp = self.client.get_tag_with_filter(
                 xml_tag="IPHost",
                 key="IPAddress",
                 value=ip_address,
                 operator=operator,
             )
+            list_resp = self.client.get_tag_with_filter(
+                xml_tag="IPHost",
+                key="ListOfIPAddresses",
+                value=ip_address,
+                operator="like",
+            )
+            # Merge results if both queries return hosts
+            if ip_resp.get("Response", {}).get("IPHost") and list_resp.get("Response", {}).get("IPHost"):
+                if isinstance(ip_resp["Response"]["IPHost"], list):
+                    ip_resp["Response"]["IPHost"].extend(list_resp["Response"]["IPHost"])
+                else:
+                    ip_resp["Response"]["IPHost"] = [ip_resp["Response"]["IPHost"]] + [list_resp["Response"]["IPHost"]]
+                return ip_resp
+            return list_resp if list_resp.get("Response", {}).get("IPHost") else ip_resp
+
         return self.client.get_tag(xml_tag="IPHost")
 
-    def create(self, name, ip_address, mask, start_ip, end_ip, host_type, debug):
+    def create(self, name, ip_address, mask, start_ip, end_ip, host_type, debug,ip_list=None):
         """Create IP Host.
 
         Args:
@@ -48,10 +65,12 @@ class IPHost:
             end_ip (str): Ending IP address in case of host_type=IPRange.
             host_type (str, optional): Type of Host. Valid options: IP, Network, IPRange.
             debug (bool, optional): Turn on debugging. Defaults to False.
+            ip_list (list, optional): List of IPs for IPList type.
+
         Returns:
             dict: XML response converted to Python dictionary
         """
-        self.client.validate_arg("host_type", host_type, ["IP", "Network", "IPRange"])
+        self.client.validate_arg("host_type", host_type, ["IP", "Network", "IPRange","IPList"])
 
         if host_type == "IP":
             Utils.validate_ip_address(ip_address)
@@ -75,11 +94,94 @@ class IPHost:
                 "end_ip": end_ip,
                 "host_type": host_type,
             }
+            
+        if host_type == "IPList":
+            if not ip_list or not isinstance(ip_list, list):
+                raise SophosFirewallInvalidArgument("ip_list must be a list of IP addresses for IPList type.")
+            if len(ip_list) > MAX_IPLIST_ADDRESSES:
+                raise SophosFirewallInvalidArgument(f"IP list cannot contain more than {MAX_IPLIST_ADDRESSES} addresses")
+            for ip in ip_list:
+                Utils.validate_ip_address(ip)
+            params = {
+                "name": name,
+                "host_type": host_type,
+                "list_of_ip_addresses": ",".join(ip_list),
+            }
+
 
         resp = self.client.submit_template(
             "createiphost.j2", template_vars=params, debug=debug
         )
 
+        return resp
+    
+    def update_iplist(self, name, ip_list, action, debug):
+        """ Add or remove IPs from an IPList-type IPHost.
+        Args:
+            name (str): Name of the IPHost object.
+            ip_list (list): List of IPs to add or remove.
+            action (str): 'add' or 'remove'.
+            debug (bool): Enable debug mode.
+        Returns:
+            dict: XML response converted to Python dictionary
+        """
+        if action:
+            self.client.validate_arg(
+                arg_name="action",
+                arg_value=action,
+                valid_choices=["add", "remove"],
+            )
+
+        # Get existing host and validate
+        resp = self.get(name=name, ip_address=None, operator="=")
+        
+        if not resp.get("Response", {}).get("IPHost", {}):
+            raise SophosFirewallInvalidArgument(f"Host {name} not found")
+        
+        iphost = resp.get("Response").get("IPHost")
+        
+        if iphost.get("HostType") != "IPList":
+            raise SophosFirewallInvalidArgument(f"Host {name} is not an IPList type")
+
+        # Get existing IP list
+        if "ListOfIPAddresses" in iphost:
+            exist_list = iphost.get("ListOfIPAddresses")
+        else:
+            exist_list = None
+
+        # Convert existing IPs to list format
+        new_ip_list = []
+        if exist_list:
+            if isinstance(exist_list, str):
+                # Split comma-separated string into list
+                new_ip_list = [ip.strip() for ip in exist_list.split(",") if ip.strip()]
+
+        # Process each IP in the input list
+        for ip in ip_list:
+            # Validate IP address first
+            Utils.validate_ip_address(ip)
+            
+            if action:
+                if action.lower() == "add" and ip not in new_ip_list:
+                    new_ip_list.append(ip)
+                elif action.lower() == "remove" and ip in new_ip_list:
+                    new_ip_list.remove(ip)
+
+        # Check size limit for add operations
+        if action.lower() == "add" and len(new_ip_list) > MAX_IPLIST_ADDRESSES:
+            raise SophosFirewallInvalidArgument(
+                f"Cannot add IPs - would exceed maximum of {MAX_IPLIST_ADDRESSES} addresses"
+            )
+
+        params = {
+            "name": name,
+            "host_type": "IPList",
+            "list_of_ip_addresses": ",".join(new_ip_list),
+        }
+        
+        resp = self.client.submit_template(
+            "updateiphost.j2", template_vars=params, debug=debug
+        )
         return resp
 
 
@@ -122,7 +224,8 @@ class IPHostGroup:
             "createiphostgroup.j2", template_vars=params, debug=debug
         )
         return resp
-
+    
+        
     def update(self, name, host_list, description, action, debug):
         """Add or remove an IP Host from an IP HostGroup.
 
@@ -176,7 +279,6 @@ class IPHostGroup:
             "updateiphostgroup.j2", template_vars=params, debug=debug
         )
         return resp
-
 
 class FQDNHost:
     """Class for working with FQDN Hosts."""

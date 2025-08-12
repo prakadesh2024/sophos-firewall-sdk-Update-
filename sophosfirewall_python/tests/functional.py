@@ -67,6 +67,7 @@ def setup(request):
         remove(tag="FirewallRule", name="FUNC_TESTRULE1")
         remove(tag="IPHost", name="FUNC_TESTNETWORK2")
         remove(tag="IPHost", name="FUNC_TESTNETWORK1")
+        remove(tag="IPHost", name="FUNC_TESTHOST1_IPLIST")
         remove(tag="IPHostGroup", name="FUNC_TESTGROUP1")
         remove(tag="FQDNHostGroup", name="FUNC_TESTFQDNGROUP1")
         remove(tag="IPHost", name="FUNC_TESTHOST1")
@@ -114,11 +115,113 @@ def test_create_ip_hostgroup(setup):
 
     expected_result = {"@code": "200", "#text": "Configuration applied successfully."}
     response = setup.create_ip_hostgroup(
-        name="FUNC_TESTGROUP1",
+        name="FUNC_IP_HOSTGROUP",
         description="Test group created during functional test",
         host_list=["FUNC_TESTHOST1"],
     )
     assert response["Response"]["IPHostGroup"]["Status"] == expected_result
+
+def test_create_ip_host_iplist(setup):
+    """Test create_ip_host_iplist method."""
+
+    expected_result = {"@code": "200", "#text": "Configuration applied successfully."}
+    response = setup.create_ip_host(
+        name="FUNC_TESTHOST1_IPLIST",
+        ip_list=["192.168.1.10", "192.168.1.11"],
+        host_type="IPList",)
+    assert response["Response"]["IPHost"]["Status"] == expected_result
+    
+def test_get_ip_host(setup):
+    
+    expected_result = {
+        "ListOfIPAddresses": ["192.168.1.10", "192.168.1.11"]
+    }
+
+    response = setup.get_ip_host(name="FUNC_TESTHOST1_IPLIST")
+    assert response["Response"]["IPHost"]["ListOfIPAddresses"] == expected_result
+
+def test_update_iplist_add(setup):
+    """Test update_iplist method."""
+
+    expected_result = {
+        "@code": "200",
+        "#text": "Configuration applied successfully.",
+    }
+
+    response = setup.update_iplist(
+        name="FUNC_TESTHOST1_IPLIST",
+        ip_list=["103.127.190.210"],
+        action="add",
+    )
+    assert response["Response"]["IPHost"]["Status"] == expected_result
+    
+def test_update_iplist_duplicate(setup):
+    """Test update_iplist method."""
+
+    expected_result = {
+        "@code": "200",
+        "#text": "Configuration applied successfully.",
+    }
+
+    response = setup.update_iplist(
+        name="FUNC_TESTHOST1_IPLIST",
+        ip_list=["103.127.190.210"],
+        action="add",
+    )
+    assert response["Response"]["IPHost"]["Status"] == expected_result
+    
+def test_get_ip_host_2(setup):
+    
+    expected_result = {
+        "ListOfIPAddresses": ["192.168.1.10", "192.168.1.11"]
+    }
+
+    response = setup.get_ip_host(name="FUNC_TESTHOST1_IPLIST")
+    assert response["Response"]["IPHost"]["ListOfIPAddresses"] == expected_result
+    
+def test_update_iplist_remove(setup):
+    """Test update_iplist method."""
+
+    expected_result = {
+        "@code": "200",
+        "#text": "Configuration applied successfully.",
+    }
+
+    response = setup.update_iplist(
+        name="FUNC_TESTHOST1_IPLIST",
+        ip_list=["103.127.190.210"],
+        action="remove",
+    )
+    assert response["Response"]["IPHost"]["Status"] == expected_result
+
+    response = setup.update_iplist(
+        name="FUNC_TESTHOST1_IPLIST",
+        ip_list=["103.127.190.210"],
+        action="add",
+    )
+    assert response["Response"]["IPHost"]["Status"] == expected_result
+    
+def test_update_iplist_remove_failed(setup):
+    """Test update_iplist method."""
+
+    expected_result = {
+        "@code": "200",
+        "#text": "Configuration applied successfully.",
+    }
+
+    response = setup.update_iplist(
+        name="FUNC_TESTHOST1_IPLIST",
+        ip_list=["103.127.190.110"],
+        action="remove",
+    )
+    assert response["Response"]["IPHost"]["Status"] == expected_result
+
+    response = setup.update_iplist(
+        name="FUNC_TESTHOST1_IPLIST",
+        ip_list=["103.127.190.210"],
+        action="add",
+    )
+    assert response["Response"]["IPHost"]["Status"] == expected_result
 
 
 def test_create_fqdn_host(setup):
